@@ -42,7 +42,7 @@ pub struct Barrier(Arc<Shared>);
 
 impl Barrier {
     pub fn new() -> Self {
-        Self(Arc::new(Shared {
+        Barrier(Arc::new(Shared {
             inner: Mutex::new(Inner {
                 active: 1, // this thread
                 waiting: 0,
