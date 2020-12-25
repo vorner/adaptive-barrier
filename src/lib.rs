@@ -63,7 +63,7 @@ impl Barrier {
         let mut lock = self.0.inner.lock().unwrap();
         lock.waiting += 1;
         let gen = lock.gen;
-        lock.check_release();
+        self.check_release(&mut lock);
         while gen == lock.gen {
             lock = self.0.condvar.wait(lock).unwrap();
         }
@@ -92,5 +92,200 @@ impl Drop for Barrier {
 impl Debug for Barrier {
     fn fmt(&self, fmt: &mut Formatter) -> FmtResult {
         fmt.pad("Barrier { .. }")
+    }
+}
+
+impl Default for Barrier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
+    use std::sync::atomic::Ordering::*;
+    use std::thread::{self, sleep};
+    use std::time::Duration;
+
+    use super::*;
+
+    /// When we have just one instance, it doesn't wait.
+    #[test]
+    fn single() {
+        let mut bar = Barrier::new();
+        assert!(bar.wait().is_leader());
+    }
+
+    /// Check the barriers wait for each other.
+    #[test]
+    fn dispatch() {
+        let mut bar = Barrier::new();
+        let waited = Arc::new(AtomicBool::new(false));
+        let t = thread::spawn({
+            let mut bar = bar.clone();
+            let waited = Arc::clone(&waited);
+            move || {
+                bar.wait();
+                waited.store(true, SeqCst);
+                bar.wait();
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert!(!waited.load(SeqCst));
+        bar.wait();
+        bar.wait();
+        assert!(waited.load(SeqCst));
+
+        t.join().unwrap();
+    }
+
+    #[test]
+    fn adjust_up() {
+        let mut bar = Barrier::new();
+        let woken = Arc::new(AtomicUsize::new(0));
+        let t1 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                bar.wait();
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert_eq!(woken.load(SeqCst), 0);
+
+        let t2 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                bar.wait();
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert_eq!(woken.load(SeqCst), 0);
+
+        bar.wait();
+        bar.wait();
+        assert_eq!(woken.load(SeqCst), 2);
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+    }
+
+    #[test]
+    fn adjust_down() {
+        let mut bar = Barrier::new();
+        let woken = Arc::new(AtomicUsize::new(0));
+        let t1 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                bar.wait();
+            }
+        });
+
+        let t2 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                // Only one wait, the second one will be done on only 2 copies
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert_eq!(woken.load(SeqCst), 0);
+
+        bar.wait();
+        t2.join().unwrap();
+        bar.wait();
+        assert_eq!(woken.load(SeqCst), 2);
+
+        t1.join().unwrap();
+    }
+
+    #[test]
+    fn adjust_pani() {
+        let mut bar = Barrier::new();
+        let woken = Arc::new(AtomicUsize::new(0));
+        let t1 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+            }
+        });
+
+        let t2 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                // Only one wait, the second one will be done on only 2 copies
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                panic!("We are going to panic, woohooo, the thing still adjusts");
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert_eq!(woken.load(SeqCst), 0);
+
+        bar.wait();
+        t2.join().unwrap_err();
+        bar.wait();
+
+        t1.join().unwrap();
+
+        assert_eq!(woken.load(SeqCst), 3);
+    }
+
+    #[test]
+    fn adjust_drop() {
+        let bar = Barrier::new();
+        let woken = Arc::new(AtomicUsize::new(0));
+        let t1 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                bar.wait();
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert_eq!(woken.load(SeqCst), 0);
+
+        let t2 = thread::spawn({
+            let mut bar = bar.clone();
+            let woken = Arc::clone(&woken);
+            move || {
+                bar.wait();
+                woken.fetch_add(1, SeqCst);
+                bar.wait();
+            }
+        });
+
+        sleep(Duration::from_millis(50));
+        assert_eq!(woken.load(SeqCst), 0);
+        drop(bar);
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+        assert_eq!(woken.load(SeqCst), 2);
+
     }
 }
