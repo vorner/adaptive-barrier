@@ -103,8 +103,8 @@ impl Default for Barrier {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::sync::atomic::Ordering::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::thread::{self, sleep};
     use std::time::Duration;
 
@@ -286,6 +286,5 @@ mod tests {
         t1.join().unwrap();
         t2.join().unwrap();
         assert_eq!(woken.load(SeqCst), 2);
-
     }
 }
