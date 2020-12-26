@@ -2,6 +2,13 @@
 name = "adaptive-barrier"
 version = "0.1.0"
 authors = ["Michal 'vorner' Vaner <vorner@vorner.cz>"]
+description = "Barrier with adaptable number of thread subsciptions"
+documentation = "https://docs.rs/adaptive-barrier"
+repository = "https://github.com/vorner/adaptive-barrier"
+readme = "README.md"
+keywords = ["barrier", "sync", "panic"]
+categories = ["concurrency", "algorithms"]
+license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
