@@ -1,6 +1,6 @@
 [package]
 name = "adaptive-barrier"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Michal 'vorner' Vaner <vorner@vorner.cz>"]
 description = "Barrier with adaptable number of thread subsciptions"
 documentation = "https://docs.rs/adaptive-barrier"
